@@ -64,9 +64,223 @@ function handleError(error: any): never {
 }
 
 program
-  .name('nansen-api')
-  .description('Nansen API CLI for blockchain analytics')
+  .name('nansen')
+  .description('Nansen trading intelligence CLI')
   .version('1.0.0');
+
+// =============================================================================
+// Streamlined Commands (JSON-first)
+// =============================================================================
+
+program
+  .command('hot <chain>')
+  .description('Top tokens by smart money flow on a chain')
+  .option('-l, --limit <n>', 'Number of results', parseInt, 10)
+  .option('-t, --timeframe <tf>', 'Timeframe: 1h, 24h, 7d', '24h')
+  .option('--pretty', 'Pretty print output')
+  .action(async (chain: Chain, options) => {
+    try {
+      const [netflow, screened] = await Promise.all([
+        getClient().getSmartMoneyNetflow({
+          chain,
+          direction: 'inflow',
+          timeframe: options.timeframe,
+          limit: options.limit,
+        }),
+        getClient().screenTokens({
+          chain,
+          onlySmartMoney: true,
+          sort: 'netflow',
+          limit: options.limit,
+        }),
+      ]);
+
+      const result = {
+        chain,
+        timeframe: options.timeframe,
+        timestamp: new Date().toISOString(),
+        hotTokens: netflow.map(t => ({
+          token: t.token,
+          symbol: t.symbol,
+          netflowUsd: t.netflowUsd,
+          buyers: t.buyersCount,
+          sellers: t.sellersCount,
+          signal: t.buyersCount > t.sellersCount * 2 ? 'strong_accumulation' :
+                  t.buyersCount > t.sellersCount ? 'accumulation' : 'mixed',
+        })),
+        topScreened: screened.slice(0, 5).map(t => ({
+          token: t.token,
+          symbol: t.symbol,
+          price: t.price,
+          priceChange24h: t.priceChange24h,
+          smartMoneyNetflow: t.smartMoneyNetflow,
+          holders: t.holders,
+        })),
+      };
+
+      console.log(JSON.stringify(result, null, options.pretty ? 2 : 0));
+    } catch (error: any) {
+      console.log(JSON.stringify({ error: error.message }));
+      process.exit(1);
+    }
+  });
+
+program
+  .command('token <address>')
+  .description('Token summary: flows, holders, notable wallets')
+  .requiredOption('-c, --chain <chain>', 'Chain (ethereum, base, arbitrum, etc.)')
+  .option('--pretty', 'Pretty print output')
+  .action(async (address: string, options) => {
+    try {
+      const [info, holders, smHolders, netflow] = await Promise.allSettled([
+        getClient().getTokenInfo({ address, chain: options.chain }),
+        getClient().getTokenHolders(address, options.chain),
+        getClient().getSmartMoneyHolders(address, options.chain),
+        getClient().getSmartMoneyNetflow({ chain: options.chain, token: address }),
+      ]);
+
+      const tokenInfo = info.status === 'fulfilled' ? info.value : null;
+      const holderData = holders.status === 'fulfilled' ? holders.value : [];
+      const smHolderData = smHolders.status === 'fulfilled' ? smHolders.value : [];
+      const flowData = netflow.status === 'fulfilled' ? netflow.value[0] : null;
+
+      const result = {
+        token: address,
+        chain: options.chain,
+        timestamp: new Date().toISOString(),
+        info: tokenInfo ? {
+          symbol: tokenInfo.symbol,
+          name: tokenInfo.name,
+          price: tokenInfo.price,
+          marketCap: tokenInfo.marketCap,
+          volume24h: tokenInfo.volume24h,
+          liquidity: tokenInfo.liquidity,
+          holders: tokenInfo.holders,
+        } : null,
+        smartMoneyFlow: flowData ? {
+          netflowUsd: flowData.netflowUsd,
+          inflowUsd: flowData.inflowUsd,
+          outflowUsd: flowData.outflowUsd,
+          buyers: flowData.buyersCount,
+          sellers: flowData.sellersCount,
+          signal: flowData.buyersCount > flowData.sellersCount ? 'accumulation' : 'distribution',
+        } : null,
+        holderBreakdown: holderData.slice(0, 5),
+        notableWallets: smHolderData.slice(0, 5).map(w => ({
+          address: w.address,
+          labels: w.labels,
+          totalValue: w.totalValue,
+          winRate: w.winRate,
+        })),
+      };
+
+      console.log(JSON.stringify(result, null, options.pretty ? 2 : 0));
+    } catch (error: any) {
+      console.log(JSON.stringify({ error: error.message }));
+      process.exit(1);
+    }
+  });
+
+program
+  .command('address <addr>')
+  .description('Wallet summary: labels, behavior, holdings')
+  .option('--pretty', 'Pretty print output')
+  .action(async (addr: string, options) => {
+    try {
+      const [profile, holdings, trades] = await Promise.allSettled([
+        getClient().getWalletProfile({ address: addr }),
+        getClient().getWalletHoldings(addr),
+        getClient().getWalletTrades(addr, 10),
+      ]);
+
+      const profileData = profile.status === 'fulfilled' ? profile.value : null;
+      const holdingsData = holdings.status === 'fulfilled' ? holdings.value : [];
+      const tradesData = trades.status === 'fulfilled' ? trades.value : [];
+
+      const result = {
+        address: addr,
+        timestamp: new Date().toISOString(),
+        profile: profileData ? {
+          labels: profileData.labels,
+          totalValue: profileData.totalValue,
+          realizedPnl: profileData.realizedPnl,
+          winRate: profileData.winRate,
+          tradesCount: profileData.tradesCount,
+          firstSeen: profileData.firstSeen,
+          lastActive: profileData.lastActive,
+        } : null,
+        topHoldings: holdingsData.slice(0, 5).map(h => ({
+          symbol: h.symbol,
+          chain: h.chain,
+          value: h.value,
+          pnl: h.pnl,
+          pnlPercent: h.pnlPercent,
+        })),
+        recentTrades: tradesData.slice(0, 5).map(t => ({
+          symbol: t.symbol,
+          side: t.side,
+          amountUsd: t.amountUsd,
+          timestamp: t.timestamp,
+        })),
+        behavior: profileData ? {
+          type: profileData.labels.includes('smart_money') ? 'smart_money' :
+                profileData.labels.includes('whale') ? 'whale' :
+                profileData.winRate > 0.6 ? 'profitable_trader' : 'retail',
+          riskLevel: profileData.tradesCount > 100 ? 'active' : 'moderate',
+        } : null,
+      };
+
+      console.log(JSON.stringify(result, null, options.pretty ? 2 : 0));
+    } catch (error: any) {
+      console.log(JSON.stringify({ error: error.message }));
+      process.exit(1);
+    }
+  });
+
+program
+  .command('alerts')
+  .description('Recent trading signals from signal log')
+  .option('-l, --limit <n>', 'Number of alerts', parseInt, 10)
+  .option('-c, --chain <chain>', 'Filter by chain')
+  .option('--min-score <n>', 'Minimum score', parseFloat, 3)
+  .option('--pretty', 'Pretty print output')
+  .action(async (options) => {
+    try {
+      const signals = getTrader().getRecentSignals(options.limit * 2);
+
+      let filtered = signals.filter(s => s.score >= options.minScore);
+      if (options.chain) {
+        filtered = filtered.filter(s => s.chain === options.chain);
+      }
+
+      const result = {
+        timestamp: new Date().toISOString(),
+        count: Math.min(filtered.length, options.limit),
+        alerts: filtered.slice(0, options.limit).map(s => ({
+          id: s.id,
+          token: s.token,
+          symbol: s.symbol,
+          chain: s.chain,
+          type: s.type,
+          score: s.score,
+          reason: s.reason,
+          loggedAt: s.loggedAt,
+          acted: s.acted,
+          outcome: s.outcome,
+        })),
+        stats: getTrader().getPerformanceStats(),
+      };
+
+      console.log(JSON.stringify(result, null, options.pretty ? 2 : 0));
+    } catch (error: any) {
+      console.log(JSON.stringify({ error: error.message }));
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// Verbose Commands (original)
+// =============================================================================
 
 // Smart Money Command
 program
@@ -452,10 +666,10 @@ program
     }
   });
 
-// Token Analysis Command
+// Token Analysis Command (verbose)
 program
-  .command('token')
-  .description('Analyze a token')
+  .command('token-detail')
+  .description('Detailed token analysis with holder breakdown')
   .requiredOption('--address <addr>', 'Token address')
   .requiredOption('--chain <chain>', 'Blockchain')
   .option('--holders', 'Include holder breakdown')

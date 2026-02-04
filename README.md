@@ -33,21 +33,47 @@ Get your API key at: https://app.nansen.ai/api
 
 ## Quick Start
 
-### CLI
+### CLI (JSON-first)
 
 ```bash
-# Trading intelligence (recommended)
-node dist/index.js trader scan --chains ethereum,base --json
-node dist/index.js trader quick --chain base
-node dist/index.js trader monitor --chains base --interval 30
+# Streamlined commands (recommended)
+nansen hot base                           # Top tokens by smart money on Base
+nansen hot ethereum -l 20                 # Top 20 on Ethereum
+nansen token 0x... -c base                # Token summary
+nansen address 0x...                      # Wallet summary
+nansen alerts                             # Recent signals
 
-# Direct API
-node dist/index.js smart-money --chain ethereum
-node dist/index.js screen --chain base --smart-money-only
+# Trading intelligence
+nansen trader scan --chains ethereum,base
+nansen trader quick --chain base
+nansen trader monitor --chains base --interval 30
+
+# Direct API (verbose)
+nansen smart-money --chain ethereum --json
+nansen screen --chain base --smart-money-only --json
 
 # MCP tools
-node dist/index.js mcp analyze-token --token 0x... --chain base
-node dist/index.js mcp tools  # List all 21 tools
+nansen mcp analyze-token --token 0x... --chain base
+nansen mcp tools
+```
+
+### Example Output
+
+```bash
+$ nansen hot base -l 3
+{"chain":"base","timeframe":"24h","timestamp":"2024-...","hotTokens":[{"token":"0x...","symbol":"VIRTUAL","netflowUsd":2500000,"buyers":45,"sellers":12,"signal":"strong_accumulation"},...],"topScreened":[...]}
+
+$ nansen token 0x... -c base --pretty
+{
+  "token": "0x...",
+  "chain": "base",
+  "info": { "symbol": "VIRTUAL", "price": 1.23, ... },
+  "smartMoneyFlow": { "netflowUsd": 500000, "buyers": 23, "signal": "accumulation" },
+  "notableWallets": [...]
+}
+
+$ nansen alerts --min-score 5
+{"timestamp":"...","count":3,"alerts":[{"symbol":"AERO","chain":"base","score":7.2,"reason":"Strong accumulation",...}],"stats":{...}}
 ```
 
 ### Programmatic
@@ -145,6 +171,15 @@ Each trading signal includes:
 ```
 
 ## CLI Commands
+
+### Streamlined (JSON-first)
+
+| Command | Description |
+|---------|-------------|
+| `hot <chain>` | Top tokens by smart money flow |
+| `token <address> -c <chain>` | Token summary: flows, holders, notable wallets |
+| `address <addr>` | Wallet summary: labels, behavior, holdings |
+| `alerts` | Recent trading signals from log |
 
 ### Trader (Intelligence Layer)
 
