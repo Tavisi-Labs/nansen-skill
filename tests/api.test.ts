@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { NansenClient, NansenApiError } from './api.js';
+import { NansenClient, NansenApiError } from '../src/api.js';
 
 // Mock fetch
 const mockFetch = vi.fn();

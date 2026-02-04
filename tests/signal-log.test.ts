@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { SignalLog, type LoggedSignal } from './signal-log.js';
+import { SignalLog, type LoggedSignal } from '../src/signal-log.js';
 import { unlinkSync, existsSync } from 'fs';
 import { join } from 'path';
-import type { OpportunitySignal } from './types.js';
+import type { OpportunitySignal } from '../src/types.js';
 
 const TEST_LOG_PATH = join(process.cwd(), '.test-signals.json');
 

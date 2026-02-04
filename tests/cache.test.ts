@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { Cache, CACHE_TTL } from './cache.js';
+import { Cache, CACHE_TTL } from '../src/cache.js';
 
 describe('Cache', () => {
   let cache: Cache<string>;
