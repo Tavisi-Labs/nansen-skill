@@ -283,7 +283,13 @@ export class NansenMcp {
   }
 
   async screenTokens(chains?: Chain[]) {
-    return this.callTool('token_discovery_screener', chains ? { chains } : {});
+    // token_discovery_screener expects `parameters` (and optionally `filters`).
+    // Keep it minimal to avoid extra credit usage and schema issues.
+    const parameters: Record<string, unknown> = {
+      chains: (chains && chains.length > 0) ? chains : ['base', 'ethereum'],
+      timeframe: '24h',
+    };
+    return this.callTool('token_discovery_screener', { request: { parameters } });
   }
 
   async getTokenOhlcv(token: string, chain: Chain, interval = '1h') {
@@ -335,7 +341,8 @@ export class NansenMcp {
   }
 
   async getChainRankings() {
-    return this.callTool('growth_chain_rank', {});
+    // MCP tool expects a `request` object even when empty.
+    return this.callTool('growth_chain_rank', { request: {} });
   }
 
   async lookupTransaction(txHash: string, chain: Chain) {
