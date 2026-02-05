@@ -90,6 +90,21 @@ export interface TokenSummary {
   whoBoughtSold?: unknown;
 }
 
+export interface TokenOhlcv {
+  token: string;
+  chain: Chain;
+  symbol?: string;
+  interval: string;
+  data: unknown;
+  volatility?: number; // Calculated from OHLCV if available
+}
+
+export interface MarketOverviewOptions {
+  chains?: Chain[];
+  topOhlcvCount?: number; // Number of top tokens to fetch OHLCV for (default: 0, max recommended: 5)
+  ohlcvInterval?: string; // OHLCV interval (default: '1h')
+}
+
 export interface MarketOverview {
   timestamp: string;
   chains: Chain[];
@@ -100,6 +115,7 @@ export interface MarketOverview {
     topDistributing: SmartMoneyNetflow[];
   };
   chainRankings?: unknown;
+  topTokensOhlcv?: TokenOhlcv[]; // OHLCV for top tokens (1 credit each)
   errors: string[];
 }
 
@@ -160,10 +176,22 @@ export class NansenData {
 
   /**
    * Get high-level market overview in a single call
-   * Fetches hot tokens, smart money activity, and chain rankings in parallel
+   * Fetches hot tokens, smart money activity, chain rankings, and optionally OHLCV for top tokens
    * This is the recommended entry point for market scanning
+   *
+   * @param options.chains - Chains to scan (default: base, ethereum, arbitrum, polygon)
+   * @param options.topOhlcvCount - Number of top tokens to fetch OHLCV for (default: 0, costs 1 credit each)
+   * @param options.ohlcvInterval - OHLCV interval (default: '1h')
    */
-  async getMarketOverview(chains: Chain[] = ['base', 'ethereum', 'arbitrum', 'polygon']): Promise<MarketOverview> {
+  async getMarketOverview(options: MarketOverviewOptions | Chain[] = {}): Promise<MarketOverview> {
+    // Support legacy array signature
+    const opts: MarketOverviewOptions = Array.isArray(options)
+      ? { chains: options }
+      : options;
+
+    const chains = opts.chains ?? ['base', 'ethereum', 'arbitrum', 'polygon'];
+    const topOhlcvCount = Math.min(opts.topOhlcvCount ?? 0, 10); // Cap at 10 to limit credit burn
+    const ohlcvInterval = opts.ohlcvInterval ?? '1h';
     const errors: string[] = [];
 
     // Parallel fetch: MCP screener + API smart money + MCP chain rankings
@@ -200,6 +228,36 @@ export class NansenData {
     const topAccumulating = sorted.filter(n => n.netflow > 0).slice(0, 10);
     const topDistributing = sorted.filter(n => n.netflow < 0).slice(0, 10);
 
+    // Fetch OHLCV for top tokens (if requested)
+    let topTokensOhlcv: TokenOhlcv[] | undefined;
+    if (topOhlcvCount > 0 && hotTokens.length > 0) {
+      const tokensToFetch = hotTokens.slice(0, topOhlcvCount).filter(t => t.address && t.chain);
+
+      const ohlcvResults = await Promise.allSettled(
+        tokensToFetch.map(async (token): Promise<TokenOhlcv | null> => {
+          try {
+            const data = await this.mcp.getTokenOhlcv(token.address, token.chain, ohlcvInterval);
+            return {
+              token: token.address,
+              chain: token.chain,
+              symbol: token.symbol,
+              interval: ohlcvInterval,
+              data,
+              volatility: this.calculateVolatility(data),
+            };
+          } catch (e: any) {
+            errors.push(`ohlcv/${token.symbol || token.address}: ${e.message}`);
+            return null;
+          }
+        })
+      );
+
+      topTokensOhlcv = ohlcvResults
+        .filter((r): r is PromiseFulfilledResult<TokenOhlcv | null> => r.status === 'fulfilled')
+        .map(r => r.value)
+        .filter((v): v is TokenOhlcv => v !== null);
+    }
+
     return {
       timestamp: new Date().toISOString(),
       chains,
@@ -210,8 +268,54 @@ export class NansenData {
         topDistributing,
       },
       chainRankings: chainRankings.status === 'fulfilled' ? chainRankings.value : null,
+      topTokensOhlcv,
       errors,
     };
+  }
+
+  /**
+   * Calculate simple volatility from OHLCV data
+   * Returns standard deviation of returns as a percentage
+   */
+  private calculateVolatility(ohlcvData: unknown): number | undefined {
+    try {
+      // Handle various OHLCV response formats
+      let candles: Array<{ close?: number; c?: number }> = [];
+
+      if (Array.isArray(ohlcvData)) {
+        candles = ohlcvData;
+      } else if (typeof ohlcvData === 'object' && ohlcvData !== null) {
+        const obj = ohlcvData as Record<string, unknown>;
+        if (Array.isArray(obj.data)) candles = obj.data;
+        else if (Array.isArray(obj.candles)) candles = obj.candles;
+        else if (Array.isArray(obj.ohlcv)) candles = obj.ohlcv;
+      }
+
+      if (candles.length < 2) return undefined;
+
+      // Extract close prices
+      const closes = candles
+        .map(c => c.close ?? c.c)
+        .filter((c): c is number => typeof c === 'number' && c > 0);
+
+      if (closes.length < 2) return undefined;
+
+      // Calculate returns
+      const returns: number[] = [];
+      for (let i = 1; i < closes.length; i++) {
+        returns.push((closes[i] - closes[i - 1]) / closes[i - 1]);
+      }
+
+      // Calculate standard deviation
+      const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
+      const variance = returns.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / returns.length;
+      const stdDev = Math.sqrt(variance);
+
+      // Return as percentage
+      return Math.round(stdDev * 10000) / 100;
+    } catch {
+      return undefined;
+    }
   }
 
   /**

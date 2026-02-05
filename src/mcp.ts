@@ -98,6 +98,7 @@ export class NansenMcp {
 
   /**
    * Call an MCP tool via HTTP JSON-RPC
+   * Handles both JSON and SSE (text/event-stream) responses
    */
   async callTool<T = unknown>(tool: McpTool, params: Record<string, unknown>): Promise<T> {
     const controller = new AbortController();
@@ -129,7 +130,15 @@ export class NansenMcp {
         );
       }
 
-      const data: McpJsonRpcResponse = await response.json();
+      // Handle SSE vs JSON response based on Content-Type
+      const contentType = response.headers.get('content-type') || '';
+      let data: McpJsonRpcResponse;
+
+      if (contentType.includes('text/event-stream')) {
+        data = await this.parseSseResponse(response);
+      } else {
+        data = await response.json();
+      }
 
       if (data.error) {
         throw new NansenMcpError(
@@ -153,6 +162,45 @@ export class NansenMcp {
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  /**
+   * Parse Server-Sent Events (SSE) response format
+   * SSE format: "event: message\ndata: {json}\n\n"
+   */
+  private async parseSseResponse(response: Response): Promise<McpJsonRpcResponse> {
+    const text = await response.text();
+
+    // Extract all "data:" lines and parse the last complete JSON-RPC response
+    const dataLines: string[] = [];
+    for (const line of text.split('\n')) {
+      if (line.startsWith('data: ')) {
+        dataLines.push(line.slice(6)); // Remove "data: " prefix
+      }
+    }
+
+    if (dataLines.length === 0) {
+      throw new NansenMcpError('No data in SSE response', 'SSE_PARSE_ERROR', { raw: text });
+    }
+
+    // Try to parse each data line as JSON, looking for the final result
+    let lastValidResponse: McpJsonRpcResponse | null = null;
+    for (const dataLine of dataLines) {
+      try {
+        const parsed = JSON.parse(dataLine);
+        if (parsed.jsonrpc === '2.0') {
+          lastValidResponse = parsed;
+        }
+      } catch {
+        // Skip non-JSON lines
+      }
+    }
+
+    if (!lastValidResponse) {
+      throw new NansenMcpError('No valid JSON-RPC response in SSE', 'SSE_PARSE_ERROR', { dataLines });
+    }
+
+    return lastValidResponse;
   }
 
   /**

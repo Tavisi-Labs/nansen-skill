@@ -3,7 +3,7 @@
  * Uses NansenData for MCP-first architecture with API fallback
  */
 
-import { NansenData, createData } from './data.js';
+import { NansenData, createData, type MarketOverviewOptions } from './data.js';
 import type { NansenClient } from './api.js';
 import type { NansenMcp } from './mcp.js';
 import type {
@@ -183,7 +183,7 @@ export class NansenAgent {
   async screenTokens(chains: Chain[]) { return this.data.screenTokens(chains); }
 
   // High-level market overview (single call, parallel fetch)
-  async getMarketOverview(chains?: Chain[]) { return this.data.getMarketOverview(chains); }
+  async getMarketOverview(options?: MarketOverviewOptions | Chain[]) { return this.data.getMarketOverview(options); }
 
   // Polymarket-focused overview (Polygon + prediction markets)
   async getPolymarketOverview(analyzeContracts?: boolean) { return this.data.getPolymarketOverview(analyzeContracts); }

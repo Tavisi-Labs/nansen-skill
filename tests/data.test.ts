@@ -69,12 +69,14 @@ describe('NansenData', () => {
           if (body.params?.name === 'token_discovery_screener') {
             return Promise.resolve({
               ok: true,
+              headers: new Headers({ 'content-type': 'application/json' }),
               json: () => Promise.resolve(screenerResponse),
             });
           }
           if (body.params?.name === 'growth_chain_rank') {
             return Promise.resolve({
               ok: true,
+              headers: new Headers({ 'content-type': 'application/json' }),
               json: () => Promise.resolve(rankingsResponse),
             });
           }
@@ -84,12 +86,14 @@ describe('NansenData', () => {
         if (url.includes('api.nansen.ai') && url.includes('netflow')) {
           return Promise.resolve({
             ok: true,
+            headers: new Headers({ 'content-type': 'application/json' }),
             json: () => Promise.resolve(netflowResponse),
           });
         }
 
         return Promise.resolve({
           ok: true,
+          headers: new Headers({ 'content-type': 'application/json' }),
           json: () => Promise.resolve({ data: [] }),
         });
       });
@@ -110,6 +114,7 @@ describe('NansenData', () => {
     it('should use default chains when none provided', async () => {
       mockFetch.mockResolvedValue({
         ok: true,
+        headers: new Headers({ 'content-type': 'application/json' }),
         json: () => Promise.resolve({ data: [], result: { content: [{ type: 'text', text: '[]' }] } }),
       });
 
@@ -126,11 +131,13 @@ describe('NansenData', () => {
           return Promise.resolve({
             ok: false,
             status: 500,
+            headers: new Headers({ 'content-type': 'text/plain' }),
             text: () => Promise.resolve('Server error'),
           });
         }
         return Promise.resolve({
           ok: true,
+          headers: new Headers({ 'content-type': 'application/json' }),
           json: () => Promise.resolve({ data: [] }),
         });
       });
@@ -141,6 +148,93 @@ describe('NansenData', () => {
       // Should still return a result with errors noted
       expect(overview.timestamp).toBeDefined();
       expect(overview.errors.length).toBeGreaterThan(0);
+    });
+
+    it('should fetch OHLCV for top tokens when topOhlcvCount > 0', async () => {
+      const screenerResponse = {
+        jsonrpc: '2.0',
+        id: 1,
+        result: {
+          content: [{ type: 'text', text: JSON.stringify([
+            { token_address: '0x123', token_symbol: 'HOT', chain: 'base' },
+            { token_address: '0x456', token_symbol: 'WARM', chain: 'base' },
+          ])}],
+        },
+      };
+
+      const ohlcvResponse = {
+        jsonrpc: '2.0',
+        id: 2,
+        result: {
+          content: [{ type: 'text', text: JSON.stringify({
+            candles: [
+              { close: 1.0 },
+              { close: 1.1 },
+              { close: 1.05 },
+            ]
+          })}],
+        },
+      };
+
+      mockFetch.mockImplementation((url: string, options: any) => {
+        const body = JSON.parse(options.body);
+
+        if (url.includes('mcp.nansen.ai')) {
+          if (body.params?.name === 'token_discovery_screener') {
+            return Promise.resolve({
+              ok: true,
+              headers: new Headers({ 'content-type': 'application/json' }),
+              json: () => Promise.resolve(screenerResponse),
+            });
+          }
+          if (body.params?.name === 'token_ohlcv') {
+            return Promise.resolve({
+              ok: true,
+              headers: new Headers({ 'content-type': 'application/json' }),
+              json: () => Promise.resolve(ohlcvResponse),
+            });
+          }
+          return Promise.resolve({
+            ok: true,
+            headers: new Headers({ 'content-type': 'application/json' }),
+            json: () => Promise.resolve({ result: { content: [{ type: 'text', text: '[]' }] } }),
+          });
+        }
+
+        return Promise.resolve({
+          ok: true,
+          headers: new Headers({ 'content-type': 'application/json' }),
+          json: () => Promise.resolve({ data: [] }),
+        });
+      });
+
+      const data = new NansenData();
+      const overview = await data.getMarketOverview({
+        chains: ['base'],
+        topOhlcvCount: 2,
+        ohlcvInterval: '1h',
+      });
+
+      expect(overview.topTokensOhlcv).toBeDefined();
+      expect(overview.topTokensOhlcv!.length).toBeGreaterThan(0);
+      expect(overview.topTokensOhlcv![0].interval).toBe('1h');
+      expect(overview.topTokensOhlcv![0].volatility).toBeDefined();
+    });
+
+    it('should not fetch OHLCV when topOhlcvCount is 0', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: () => Promise.resolve({ data: [], result: { content: [{ type: 'text', text: '[]' }] } }),
+      });
+
+      const data = new NansenData();
+      const overview = await data.getMarketOverview({
+        chains: ['base'],
+        topOhlcvCount: 0,
+      });
+
+      expect(overview.topTokensOhlcv).toBeUndefined();
     });
 
     it('should categorize netflows into accumulating and distributing', async () => {
@@ -155,11 +249,13 @@ describe('NansenData', () => {
         if (url.includes('api.nansen.ai')) {
           return Promise.resolve({
             ok: true,
+            headers: new Headers({ 'content-type': 'application/json' }),
             json: () => Promise.resolve(netflowResponse),
           });
         }
         return Promise.resolve({
           ok: true,
+          headers: new Headers({ 'content-type': 'application/json' }),
           json: () => Promise.resolve({ result: { content: [{ type: 'text', text: '[]' }] } }),
         });
       });
@@ -210,12 +306,14 @@ describe('NansenData', () => {
           if (body.params?.name === 'general_search') {
             return Promise.resolve({
               ok: true,
+              headers: new Headers({ 'content-type': 'application/json' }),
               json: () => Promise.resolve(searchResponse),
             });
           }
           if (body.params?.name === 'token_discovery_screener') {
             return Promise.resolve({
               ok: true,
+              headers: new Headers({ 'content-type': 'application/json' }),
               json: () => Promise.resolve(screenerResponse),
             });
           }
@@ -224,12 +322,14 @@ describe('NansenData', () => {
         if (url.includes('api.nansen.ai')) {
           return Promise.resolve({
             ok: true,
+            headers: new Headers({ 'content-type': 'application/json' }),
             json: () => Promise.resolve(netflowResponse),
           });
         }
 
         return Promise.resolve({
           ok: true,
+          headers: new Headers({ 'content-type': 'application/json' }),
           json: () => Promise.resolve({ data: [] }),
         });
       });
@@ -257,6 +357,7 @@ describe('NansenData', () => {
           if (body.params?.name === 'token_current_top_holders') {
             return Promise.resolve({
               ok: true,
+              headers: new Headers({ 'content-type': 'application/json' }),
               json: () => Promise.resolve({
                 result: { content: [{ type: 'text', text: JSON.stringify([{ address: '0xholder' }]) }] },
               }),
@@ -265,6 +366,7 @@ describe('NansenData', () => {
           if (body.params?.name === 'token_recent_flows_summary') {
             return Promise.resolve({
               ok: true,
+              headers: new Headers({ 'content-type': 'application/json' }),
               json: () => Promise.resolve({
                 result: { content: [{ type: 'text', text: JSON.stringify({ flows: [] }) }] },
               }),
@@ -272,6 +374,7 @@ describe('NansenData', () => {
           }
           return Promise.resolve({
             ok: true,
+            headers: new Headers({ 'content-type': 'application/json' }),
             json: () => Promise.resolve({
               result: { content: [{ type: 'text', text: '[]' }] },
             }),
@@ -280,6 +383,7 @@ describe('NansenData', () => {
 
         return Promise.resolve({
           ok: true,
+          headers: new Headers({ 'content-type': 'application/json' }),
           json: () => Promise.resolve({ data: [] }),
         });
       });
@@ -293,6 +397,7 @@ describe('NansenData', () => {
     it('should not analyze contracts when flag is false', async () => {
       mockFetch.mockResolvedValue({
         ok: true,
+        headers: new Headers({ 'content-type': 'application/json' }),
         json: () => Promise.resolve({ data: [], result: { content: [{ type: 'text', text: '[]' }] } }),
       });
 
@@ -317,6 +422,7 @@ describe('NansenData', () => {
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
+        headers: new Headers({ 'content-type': 'application/json' }),
         json: () => Promise.resolve(screenerResponse),
       });
 
@@ -339,6 +445,7 @@ describe('NansenData', () => {
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
+        headers: new Headers({ 'content-type': 'application/json' }),
         json: () => Promise.resolve(netflowResponse),
       });
 
@@ -365,6 +472,7 @@ describe('NansenData', () => {
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
+        headers: new Headers({ 'content-type': 'application/json' }),
         json: () => Promise.resolve(mcpResponse),
       });
 
@@ -384,12 +492,14 @@ describe('NansenData', () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 500,
+        headers: new Headers({ 'content-type': 'text/plain' }),
         text: () => Promise.resolve('MCP error'),
       });
 
       // Second call (API) succeeds
       mockFetch.mockResolvedValueOnce({
         ok: true,
+        headers: new Headers({ 'content-type': 'application/json' }),
         json: () => Promise.resolve({
           data: [{ address: '0xholder', ownership_percentage: 0.1, value_usd: 1000 }],
         }),
@@ -415,6 +525,7 @@ describe('NansenData', () => {
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
+        headers: new Headers({ 'content-type': 'application/json' }),
         json: () => Promise.resolve(searchResponse),
       });
 

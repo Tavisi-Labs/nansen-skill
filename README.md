@@ -44,6 +44,8 @@ Get your API key at: https://app.nansen.ai/api
 # Market overview (single call, parallel fetch)
 nansen market                             # Overview: base, ethereum, arbitrum, polygon
 nansen market -c base,solana --pretty     # Custom chains
+nansen market -k 5                        # Include OHLCV for top 5 tokens (+5 credits)
+nansen market -k 3 --interval 4h          # Top 3 with 4h OHLCV
 nansen polymarket                         # Polymarket/Polygon focused
 nansen polymarket --analyze-contracts     # Include contract analysis
 
@@ -101,9 +103,14 @@ import { createData } from 'nansen-api-skill';
 const data = createData();
 
 // Single call for market overview (parallel fetch)
-const market = await data.getMarketOverview(['base', 'ethereum', 'polygon']);
+const market = await data.getMarketOverview({
+  chains: ['base', 'ethereum', 'polygon'],
+  topOhlcvCount: 5,  // Fetch OHLCV for top 5 tokens (5 credits)
+  ohlcvInterval: '1h',
+});
 console.log(`Hot tokens: ${market.hotTokens.length}`);
 console.log(`Top accumulating: ${market.smartMoneyActivity.topAccumulating.map(t => t.symbol)}`);
+console.log(`Volatility: ${market.topTokensOhlcv?.map(t => `${t.symbol}: ${t.volatility}%`)}`);
 
 // Polymarket-focused overview
 const polymarket = await data.getPolymarketOverview(true); // true = analyze contracts
@@ -224,6 +231,8 @@ Each trading signal includes:
 |---------|-------------|
 | `market` | High-level market overview (parallel fetch) |
 | `market -c base,solana` | Custom chains |
+| `market -k 5` | Include OHLCV/volatility for top 5 tokens (5 credits) |
+| `market -k 3 --interval 4h` | OHLCV with 4-hour interval |
 | `polymarket` | Polymarket/Polygon focused overview |
 | `polymarket --analyze-contracts` | Include CTF contract analysis |
 
@@ -298,8 +307,9 @@ Each trading signal includes:
 npm test
 ```
 
-85 tests covering:
+101 tests covering:
 - `data.test.ts` - Unified data layer, market overview, Polymarket
+- `mcp.test.ts` - MCP client, SSE parsing, JSON-RPC
 - `api.test.ts` - Direct API client
 - `cache.test.ts` - Caching layer
 - `rate-limiter.test.ts` - Rate limiting

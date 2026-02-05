@@ -68,11 +68,17 @@ program
   .command('market')
   .description('High-level market overview (single call, parallel fetch)')
   .option('-c, --chains <chains>', 'Comma-separated chains', 'base,ethereum,arbitrum,polygon')
+  .option('-k, --top-ohlcv <n>', 'Fetch OHLCV for top N tokens (1 credit each, max 10)', parseInt, 0)
+  .option('--interval <interval>', 'OHLCV interval (1h, 4h, 1d)', '1h')
   .option('--pretty', 'Pretty print output')
   .action(async (options) => {
     try {
       const chains = options.chains.split(',').map((c: string) => c.trim()) as Chain[];
-      const overview = await getData().getMarketOverview(chains);
+      const overview = await getData().getMarketOverview({
+        chains,
+        topOhlcvCount: options.topOhlcv,
+        ohlcvInterval: options.interval,
+      });
       console.log(JSON.stringify(overview, null, options.pretty ? 2 : 0));
     } catch (error: any) {
       console.log(JSON.stringify({ error: error.message }));
